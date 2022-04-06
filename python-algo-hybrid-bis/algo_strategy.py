@@ -109,10 +109,11 @@ class AlgoStrategy(gamelib.AlgoCore):
 
     def overall_strategy(self, game_state: gamelib.GameState):
         if self.mode == ATTACK and not self.have_scored:
-            self.attack_thres[MP] *= 2
+            # self.attack_thres[MP] *= 2
+            self.attack_thres[MP] += 5
             gamelib.debug_write('Did not score in the previous round with thres {}'.format(self.attack_thres))
         elif self.mode == ATTACK:
-            self.attack_thres[MP] -= 1
+            # self.attack_thres[MP] -= 1
             gamelib.debug_write('Scored in the previous round with thres {}'.format(self.attack_thres))
         self.have_scored = False
         if game_state.get_resource(MP) >= self.attack_thres[MP] and game_state.get_resource(SP) >= self.attack_thres[SP]:
@@ -122,9 +123,8 @@ class AlgoStrategy(gamelib.AlgoCore):
             self.mode = DEFENSE
             self.defense_strategy(game_state)           
 
-    def remove_zshape_wall(self, game_state):
-        wall_coordinates = [[1, 13], [2, 13], [25, 13], [26, 13], [2, 12], [3, 12], [24, 12], [25, 12]]
-        game_state.attempt_remove(wall_coordinates)
+    def remove_door_wall(self, door_coordinates, game_state):
+        game_state.attempt_remove(door_coordinates)
     
     def remove_center_and_other_wall(self, center_wall, other_wall, game_state):
         game_state.attempt_remove(center_wall)
@@ -146,30 +146,27 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state.attempt_spawn(TURRET, center_turret)
 
     
-        corner_wall = [[0, 13], [3, 13], [24, 13], [27, 13]]
+        corner_wall = [[0, 13], [3, 13], [4, 13], [23, 13], [24, 13], [27, 13]]
         corner_door_wall = [[1, 13], [2, 13], [25, 13], [26, 13]]
         game_state.attempt_spawn(WALL, corner_wall)
         game_state.attempt_spawn(WALL, corner_door_wall)
 
         game_state.attempt_upgrade(corner_turret)
-        resource = game_state.get_resource(0)
 
         center_wall = [[7, 10], [8, 10], [9, 10], [10, 10], [11, 10], [12, 10], [15, 10], [16, 10], [17, 10], [18, 10], [19, 10], [20, 10]]
         game_state.attempt_spawn(WALL, center_wall)
 
 
         game_state.attempt_upgrade(center_turret)
-        # upgrade two corner walls
-        game_state.attempt_upgrade([[0, 13], [27, 13]])
 
-        other_wall = [[1, 12], [2, 12], [3, 12], [24, 12], [25, 12], [26, 12], [13, 10], [14, 10], [8, 9], [10, 9], [17, 9], [19, 9]]
+        other_wall = [[1, 12], [2, 12], [3, 12], [4, 12], [23, 12], [24, 12], [25, 12], [26, 12], [5, 10], [6, 10], [13, 10], [14, 10], [21, 10], [22, 10], [8, 9], [10, 9], [17, 9], [19, 9]]
         game_state.attempt_spawn(WALL, other_wall)
 
-        self.remove_zshape_wall(game_state)
+        game_state.attempt_upgrade(corner_wall)
+
+        self.remove_door_wall(corner_door_wall, game_state)
         self.remove_center_and_other_wall(center_wall, other_wall, game_state)
 
-        if resource >= 4: 
-            game_state.attempt_upgrade(corner_wall)
 
     def defense_strategy(self, game_state: gamelib.GameState):
         self.build_defense_strategy_defenses(game_state)
@@ -180,22 +177,34 @@ class AlgoStrategy(gamelib.AlgoCore):
         else:
             # Now let's analyze the enemy base to see where their defenses are concentrated.
             # If they have many units in the front we can build a line for our demolishers to attack them at long range.
-            if self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 10:
+            detect_x_range = []
+            for i in range(5, 23):
+                detect_x_range.append(i)
+            if self.detect_enemy_unit(game_state, unit_type=None, valid_x=detect_x_range, valid_y=[14, 15]) > 18 and game_state.get_resource(0) >= 10:
                 self.demolisher_line_strategy(game_state)
             else:
                 # They don't have many units in the front so lets figure out their least defended area and send Scouts there.
 
                 # Only spawn Scouts every other turn
                 # Sending more at once is better since attacks can only hit a single scout at a time
-                # if game_state.turn_number % 2 == 1:
-                #     # To simplify we will just check sending them from back left and right
-                #     scout_spawn_location_options = [[13, 0], [14, 0]]
-                #     best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
-                #     game_state.attempt_spawn(SCOUT, best_location, 2)
+                if game_state.turn_number % 2 == 1:
+                    # To simplify we will just check sending them from back left and right
+                    # scout_spawn_location_options = [[13, 0], [14, 0]]
+                    # best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+                    # game_state.attempt_spawn(SCOUT, best_location, 2)
+                    game_state.attempt_spawn(DEMOLISHER, [24, 10])
 
                 # Lastly, if we have spare SP, let's build some supports
                 support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
                 game_state.attempt_spawn(SUPPORT, support_locations)
+                game_state.attempt_upgrade(support_locations)
+        
+        #self.upgrade_more_walls(game_state)
+    
+    def upgrade_more_walls(self, game_state):
+        to_upgrade = [[4, 13], [23, 13], [1, 12], [2, 12], [3, 12], [4, 12], [23, 12], [24, 12], [25, 12], [26, 12]]
+        if game_state.get_resource(0) > 18 + len(to_upgrade):
+            game_state.attempt_upgrade(to_upgrade)
 
     def attack_strategy(self, game_state: gamelib.GameState):
         # Build
@@ -311,13 +320,17 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         # Now let's build out a line of stationary units. This will prevent our demolisher from running into the enemy base.
         # Instead they will stay at the perfect distance to attack the front two rows of the enemy base.
-        for x in range(27, 5, -1):
-            game_state.attempt_spawn(cheapest_unit, [x, 12])
+        demolisher_line_coordinates = []
+        for x in range(22, 5, -1):
+            demolisher_line_coordinates.append([x, 12])
+            
+        game_state.attempt_spawn(cheapest_unit, demolisher_line_coordinates)
 
         # Now spawn demolishers next to the line
         # By asking attempt_spawn to spawn 1000 units, it will essentially spawn as many as we have resources for
-        game_state.attempt_spawn(DEMOLISHER, [24, 10], 1)
-
+        game_state.attempt_spawn(DEMOLISHER, [24, 10], 2)
+        game_state.attempt_remove(demolisher_line_coordinates)
+    
     def least_damage_spawn_location(self, game_state, location_options):
         """
         This function will help us guess which location is the safest to spawn moving units from.
