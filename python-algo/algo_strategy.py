@@ -56,7 +56,8 @@ class AlgoStrategy(gamelib.AlgoCore):
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
 
-        self.starter_strategy(game_state)
+        # self.starter_strategy(game_state)
+        self.overall_strategy(game_state=game_state)
 
         game_state.submit_turn()
 
@@ -100,6 +101,125 @@ class AlgoStrategy(gamelib.AlgoCore):
                 # Lastly, if we have spare SP, let's build some supports
                 support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
                 game_state.attempt_spawn(SUPPORT, support_locations)
+
+    def overall_strategy(self, game_state: gamelib.GameState):
+        if game_state.get_resource(MP) >= 20:
+           self.attack_strategy(game_state)
+        else:
+            self.defense_strategy(game_state)           
+
+    def remove_zshape_wall(self, game_state):
+        wall_coordinates = [[1, 13], [2, 13], [25, 13], [26, 13], [2, 12], [3, 12], [24, 12], [25, 12]]
+        game_state.attempt_remove(wall_coordinates)
+
+    def build_defense_strategy_defenses(self, game_state):
+        """
+        Build basic defenses using hardcoded locations.
+        Remember to defend corners and avoid placing units in the front where enemy demolishers can attack them.
+        """
+        # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
+        # More community tools available at: https://terminal.c1games.com/rules#Download
+
+        # Place turrets that attack enemy units
+        corner_turret = [[2, 11], [25, 11]]
+        game_state.attempt_spawn(TURRET, corner_turret)
+        center_turret = [[9, 9], [18, 9]]
+        game_state.attempt_spawn(TURRET, center_turret)
+
+    
+        corner_wall = [[0, 13], [1, 13], [2, 13], [3, 13], [24, 13], [25, 13], [26, 13], [27, 13]]
+        game_state.attempt_spawn(WALL, corner_wall)
+
+        game_state.attempt_upgrade(corner_turret)
+        resource = game_state.get_resource(0)
+
+        center_wall = [[7, 10], [8, 10], [9, 10], [10, 10], [11, 10], [12, 10], [15, 10], [16, 10], [17, 10], [18, 10], [19, 10], [20, 10]]
+        game_state.attempt_spawn(WALL, center_wall)
+        game_state.attempt_remove(WALL, center_wall)
+
+        other_wall = [[1, 12], [2, 12], [3, 12], [24, 12], [25, 12], [26, 12], [13, 10], [14, 10], [8, 9], [10, 9], [17, 9], [19, 9]]
+        game_state.attempt_remove(WALL, other_wall)
+        game_state.attempt_spawn(WALL, other_wall)
+
+        self.remove_zshape_wall(game_state)
+
+        # Place walls in front of turrets to soak up damage for them
+        # wall_locations = [[0, 13], [1, 13], [2, 13], [3, 13], [24, 13], [25, 13], [26, 13], [27, 13], [1, 12], [2, 12], [3, 12], [24, 12], [25, 12], [26, 12], [7, 10], [8, 10], [9, 10], [10, 10], [11, 10], [12, 10], [13, 10], [14, 10], [15, 10], [16, 10], [17, 10], [18, 10], [19, 10], [12, 9], [14, 9]]
+        # upgrade walls so they soak more damage
+        # game_state.attempt_upgrade(wall_locations)
+
+        # upgrade turrets in the corner
+
+        if resource >= 4: 
+            game_state.attempt_upgrade(corner_wall)
+
+    def defense_strategy(self, game_state: gamelib.GameState):
+        self.build_defense_strategy_defenses(game_state)
+        
+        # If the turn is less than 5, stall with interceptors and wait to see enemy's base
+        if game_state.turn_number < 5:
+            self.stall_with_interceptors(game_state)
+        else:
+            # Now let's analyze the enemy base to see where their defenses are concentrated.
+            # If they have many units in the front we can build a line for our demolishers to attack them at long range.
+            if self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 10:
+                self.demolisher_line_strategy(game_state)
+            else:
+                # They don't have many units in the front so lets figure out their least defended area and send Scouts there.
+
+                # Only spawn Scouts every other turn
+                # Sending more at once is better since attacks can only hit a single scout at a time
+                if game_state.turn_number % 2 == 1:
+                    # To simplify we will just check sending them from back left and right
+                    scout_spawn_location_options = [[13, 0], [14, 0]]
+                    best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+                    game_state.attempt_spawn(SCOUT, best_location, 4)
+
+                # Lastly, if we have spare SP, let's build some supports
+                support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
+                game_state.attempt_spawn(SUPPORT, support_locations)
+
+    def attack_strategy(self, game_state: gamelib.GameState):
+        # Build
+        self.build_attack_strategy_defences(game_state=game_state)
+        # Now try to see which way to attack
+        scout_spawn_location_options = [[13, 0], [14, 0]]
+        best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+        left_zshape =  [[1, 13], [2, 13],[2, 12], [3, 12]]
+        right_zshape = [[25, 13], [26, 13], [24, 12], [25, 12]]
+        if (best_location == [13, 0]):
+            # Attack from bottom left to top right
+            game_state.attempt_spawn(WALL, left_zshape)
+            if game_state.get_resource(SP) >= game_state.type_cost(WALL)[SP]:
+                game_state.attempt_spawn(WALL, [6, 7])
+                game_state.attempt_spawn(SCOUT, [8, 5], num=10)
+                game_state.attempt_spawn(SCOUT, [7, 6], num=1000)
+                game_state.attempt_remove(WALL, [6, 7])
+        else:
+            game_state.attempt_spawn(WALL, right_zshape)
+            # Attack from bottom right to top left
+            if game_state.get_resource(SP) >= game_state.type_cost(WALL)[SP]:
+                game_state.attempt_spawn(WALL, [21, 7])
+                game_state.attempt_spawn(SCOUT, [19, 5], num=10)
+                game_state.attempt_spawn(SCOUT, [20, 6], num=1000)
+                game_state.attempt_remove(WALL, [21, 7])
+        
+
+    def build_attack_strategy_defences(self, game_state: gamelib.GameState):
+        # Place turrets (normally not needed, assuming it exists)
+        turret_locations =  [[2, 11], [25, 11], [13, 4]]
+        game_state.attempt_spawn(TURRET, turret_locations)
+        # Walls
+        diag_wall_locations = [[4, 12], [23, 12], [4, 11], [23, 11], [5, 10], [22, 10], [6, 9], [21, 9], [7, 8], [20, 8], [8, 7], [19, 7], [9, 6], [18, 6], [10, 5], [17, 5], [11, 4], [12, 4], [14, 4], [15, 4], [16, 4], [12, 3], [15, 3]]
+        imp_wall_locations = [[0, 13], [3, 13], [24, 13], [27, 13], [1, 12], [26, 12], [12, 5], [13, 5], [14, 5]]
+        game_state.attempt_spawn(WALL, imp_wall_locations)
+        game_state.attempt_spawn(WALL, diag_wall_locations)
+        # Support
+        # supporter_locations = [[13, 3], [14, 3], [13, 2], [14, 2]]
+        # game_state.attempt_spawn(SUPPORT, supporter_locations)
+        # Remove the walls for next round
+        game_state.attempt_remove(diag_wall_locations + imp_wall_locations)
+        game_state.attempt_upgrade(turret_locations)
 
     def build_defences(self, game_state):
         """
