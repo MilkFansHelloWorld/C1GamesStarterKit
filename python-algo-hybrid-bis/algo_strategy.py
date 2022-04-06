@@ -32,7 +32,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         """
         gamelib.debug_write('Configuring your custom algo strategy...')
         self.config = config
-        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP
+        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP, DEFENSE, ATTACK
         WALL = config["unitInformation"][0]["shorthand"]
         SUPPORT = config["unitInformation"][1]["shorthand"]
         TURRET = config["unitInformation"][2]["shorthand"]
@@ -41,8 +41,13 @@ class AlgoStrategy(gamelib.AlgoCore):
         INTERCEPTOR = config["unitInformation"][5]["shorthand"]
         MP = 1
         SP = 0
+        DEFENSE = 0
+        ATTACK = 1
         # This is a good place to do initial setup
         self.scored_on_locations = []
+        self.have_scored = False
+        self.mode = DEFENSE
+        self.attack_thres = [40, 10]
 
     def on_turn(self, turn_state):
         """
@@ -103,9 +108,18 @@ class AlgoStrategy(gamelib.AlgoCore):
                 game_state.attempt_spawn(SUPPORT, support_locations)
 
     def overall_strategy(self, game_state: gamelib.GameState):
-        if game_state.get_resource(MP) >= 20:
-           self.attack_strategy(game_state)
+        if self.mode == ATTACK and not self.have_scored:
+            self.attack_thres[MP] *= 2
+            gamelib.debug_write('Did not score in the previous round with thres {}'.format(self.attack_thres))
+        elif self.mode == ATTACK:
+            self.attack_thres[MP] -= 1
+            gamelib.debug_write('Scored in the previous round with thres {}'.format(self.attack_thres))
+        self.have_scored = False
+        if game_state.get_resource(MP) >= self.attack_thres[MP] and game_state.get_resource(SP) >= self.attack_thres[SP]:
+            self.mode = ATTACK
+            self.attack_strategy(game_state)
         else:
+            self.mode = DEFENSE
             self.defense_strategy(game_state)           
 
     def remove_zshape_wall(self, game_state):
@@ -173,11 +187,11 @@ class AlgoStrategy(gamelib.AlgoCore):
 
                 # Only spawn Scouts every other turn
                 # Sending more at once is better since attacks can only hit a single scout at a time
-                if game_state.turn_number % 2 == 1:
-                    # To simplify we will just check sending them from back left and right
-                    scout_spawn_location_options = [[13, 0], [14, 0]]
-                    best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
-                    game_state.attempt_spawn(SCOUT, best_location, 2)
+                # if game_state.turn_number % 2 == 1:
+                #     # To simplify we will just check sending them from back left and right
+                #     scout_spawn_location_options = [[13, 0], [14, 0]]
+                #     best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+                #     game_state.attempt_spawn(SCOUT, best_location, 2)
 
                 # Lastly, if we have spare SP, let's build some supports
                 support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
@@ -196,16 +210,20 @@ class AlgoStrategy(gamelib.AlgoCore):
             game_state.attempt_spawn(WALL, left_zshape)
             if game_state.get_resource(SP) >= game_state.type_cost(WALL)[SP]:
                 game_state.attempt_spawn(WALL, [6, 7])
-                game_state.attempt_spawn(SCOUT, [8, 5], num=10)
-                game_state.attempt_spawn(SCOUT, [7, 6], num=1000)
+                game_state.attempt_spawn(SCOUT, [10, 3], num=5)
+                game_state.attempt_spawn(SCOUT, [9, 4], num=10)
+                game_state.attempt_spawn(SCOUT, [8, 5], num=1000)
+                # game_state.attempt_spawn(SCOUT, [7, 6], num=1000)
                 game_state.attempt_remove([6, 7])
         else:
             game_state.attempt_spawn(WALL, right_zshape)
             # Attack from bottom right to top left
             if game_state.get_resource(SP) >= game_state.type_cost(WALL)[SP]:
                 game_state.attempt_spawn(WALL, [21, 7])
-                game_state.attempt_spawn(SCOUT, [19, 5], num=10)
-                game_state.attempt_spawn(SCOUT, [20, 6], num=1000)
+                game_state.attempt_spawn(SCOUT, [17, 3], num=5)
+                game_state.attempt_spawn(SCOUT, [18, 4], num=10)
+                game_state.attempt_spawn(SCOUT, [19, 5], num=1000)
+                # game_state.attempt_spawn(SCOUT, [20, 6], num=1000)
                 game_state.attempt_remove([21, 7])
         
 
@@ -298,7 +316,7 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         # Now spawn demolishers next to the line
         # By asking attempt_spawn to spawn 1000 units, it will essentially spawn as many as we have resources for
-        game_state.attempt_spawn(DEMOLISHER, [24, 10], 2)
+        game_state.attempt_spawn(DEMOLISHER, [24, 10], 1)
 
     def least_damage_spawn_location(self, game_state, location_options):
         """
@@ -355,6 +373,8 @@ class AlgoStrategy(gamelib.AlgoCore):
                 gamelib.debug_write("Got scored on at: {}".format(location))
                 self.scored_on_locations.append(location)
                 gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
+            else:
+                self.have_scored = True
 
 
 if __name__ == "__main__":
